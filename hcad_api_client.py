@@ -381,3 +381,35 @@ class HarrisCountyGISClient:
 
         print("=" * w)
         print()
+
+
+# ── Standalone execution / quick verification ─────────────────────────────────
+if __name__ == "__main__":
+    import json as _json
+    import sys as _sys
+
+    print("\nHCAD ArcGIS Client — Phase 1 Verification")
+    print("Test address: Kowis St, Houston, TX 77028\n")
+
+    client = HarrisCountyGISClient()
+
+    # Query by street name + zip — matches all parcels on Kowis St in 77028
+    records = client.query_property(street_name="KOWIS", site_zip="77028")
+
+    if not records:
+        print(
+            "[WARN] No records returned.\n"
+            "  If you see 'Host not in allowlist' above, Harris County's\n"
+            "  ArcGIS server is blocking this machine's IP address.\n"
+            "  Run from a local / residential internet connection to get live data.\n"
+        )
+        _sys.exit(0)
+
+    print(f"  {len(records)} parcel(s) found on Kowis St (77028)\n")
+
+    for rec in records:
+        client.pretty_print(rec)
+
+    # Also dump the raw dicts so every field is visible
+    print("Raw JSON output:")
+    print(_json.dumps(records, indent=2, default=str))
