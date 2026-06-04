@@ -64,3 +64,94 @@ python houston_leads.py --streets sample_input.csv --lgbs-file lgbs_harris.xlsx
 - Harris County GIS blocks cloud/datacenter IPs
 - Data is live from HCAD — refresh monthly for best results
 - LGBS tax sale list: download manually from taxsales.lgbs.com → Harris County
+
+---
+
+## PropStream North Houston Search
+
+`propstream_search.py` pulls leads directly from PropStream for the north side of Houston: **Studewood, 5th Ward, Northline, and Aldine**.
+
+### Target Zones & Zip Codes
+
+| Zone | Zip Codes |
+|------|-----------|
+| Studewood | 77008, 77018 |
+| 5th Ward | 77020, 77026 |
+| Northline | 77022, 77093 |
+| Aldine | 77032, 77037, 77038, 77039, 77060, 77073 |
+
+### Setup Your Credentials
+
+```bash
+# Windows
+set PROPSTREAM_EMAIL=your@email.com
+set PROPSTREAM_PASSWORD=yourpassword
+
+# Mac / Linux
+export PROPSTREAM_EMAIL=your@email.com
+export PROPSTREAM_PASSWORD=yourpassword
+```
+
+### Running PropStream Search
+
+```bash
+# All three setups, all north Houston zones (recommended):
+python propstream_search.py
+
+# Single setup only:
+python propstream_search.py --setup 1   # Tired Landlord
+python propstream_search.py --setup 2   # Vacant Land
+python propstream_search.py --setup 3   # Pre-Foreclosure / Liens
+
+# Specific zone only:
+python propstream_search.py --zone Aldine
+python propstream_search.py --zone "5th Ward"
+
+# More results per zone (default: 50):
+python propstream_search.py --limit 100
+
+# Custom output file:
+python propstream_search.py --out my_north_houston_leads.csv
+```
+
+### The Three Search Setups
+
+**Setup 1 — Tired Landlord** (SFR single-family)
+- Owner Type: Individual (no LLCs or corporations)
+- Ownership Duration: 10+ years
+- Occupancy: Absentee owner (rental or vacant)
+- Estimated Equity: 50–100%
+- *Sorted by years owned — longest hold first*
+
+**Setup 2 — Vacant Land**
+- Property Type: Vacant / Unimproved Land
+- Occupancy: Vacant
+- Ownership Duration: 5+ years
+- Estimated Equity: 90–100% (free and clear)
+- *Sorted by equity percent — clearest title first*
+
+**Setup 3 — Pre-Foreclosure / Liens** (highest motivation)
+- Pre-foreclosure filings, OR
+- Lien amount ≥ $2,000 (real financial pressure)
+- *Sorted by lien amount — most distressed first*
+
+### PropStream Output Columns
+
+| Column | Description |
+|--------|-------------|
+| rank | Lead rank across all zones/setups |
+| setup | Which search setup produced this lead |
+| zone | North Houston zone (Studewood, 5th Ward, etc.) |
+| owner_name | Property owner |
+| mailing_address | Where to send direct mail |
+| property_address | Property location |
+| property_type | Property type (SFR, Land, etc.) |
+| years_owned | How long current owner has held |
+| occupancy_status | Absentee / Vacant / Owner-occupied |
+| estimated_value | PropStream AVM estimate |
+| equity_percent | Estimated equity % |
+| equity_amount | Estimated equity dollar amount |
+| lien_amount | Total lien amount (if any) |
+| pre_foreclosure | Yes/No pre-foreclosure flag |
+| tax_delinquent | Yes/No tax delinquent flag |
+| acct_num | Property account / parcel number |
