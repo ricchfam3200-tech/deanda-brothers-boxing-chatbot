@@ -321,7 +321,11 @@ def run(leads_path: str, output_path: str, hctax_sample: int) -> int:
     print("  PHASE 3 COMPLETE")
     print("=" * 56)
     print(f"  Source          : {source_label}")
-    print(f"  Delinquent hits : {len(priority[priority.get('tax_delinquent', pd.Series([''])].str.startswith('YES', na=False)] if 'tax_delinquent' in priority.columns else priority)}")
+    if "tax_delinquent" in priority.columns:
+        hit_count = priority["tax_delinquent"].str.startswith("YES", na=False).sum()
+    else:
+        hit_count = 0
+    print(f"  Delinquent hits : {hit_count}")
     print(f"  Output file     : {output_path}")
     print(f"  Total rows      : {len(priority)}")
     print("=" * 56)
