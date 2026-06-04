@@ -526,10 +526,10 @@ def run(streets_csv: str, zip_arg: str, output_path: str,
     print("=" * 60)
     print("  DONE")
     print("=" * 60)
-    print(f"  Total properties pulled  : {len(df) + len(df)//2}")
-    print(f"  Individual owners        : {len(df)}")
+    print(f"  Individual owners found  : {len(df)}")
     print(f"  Leads (score >= {min_score})       : {len(final)}")
-    print(f"  Tax delinquent matched   : {len(final[final['final_signals'].str.contains('TAX DELINQUENT', na=False)]) if 'final_signals' in final.columns else 0}")
+    delinquent_hits = len(final[final["final_signals"].str.contains("TAX DELINQUENT", na=False)]) if "final_signals" in final.columns else 0
+    print(f"  Tax delinquent matched   : {delinquent_hits}")
     print(f"  Output file              : {output_path}")
     print()
 
@@ -537,9 +537,14 @@ def run(streets_csv: str, zip_arg: str, output_path: str,
         print("  YOUR TOP 5 LEADS:")
         print()
         for _, row in final.head(5).iterrows():
+            try:
+                val = float(row.get("appraised_value") or 0)
+                val_str = f"${val:,.0f}"
+            except Exception:
+                val_str = "N/A"
             print(f"  #{int(row['rank'])}  {row.get('owner_name','')}")
             print(f"      {row.get('property_address','')}")
-            print(f"      Score: {row.get('final_score','')}/10  |  Value: ${row.get('appraised_value',0):,.0f}")
+            print(f"      Score: {row.get('final_score','')}/10  |  Value: {val_str}")
             print(f"      Signals: {row.get('final_signals','')}")
             print()
 
