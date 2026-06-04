@@ -63,12 +63,17 @@ ARCGIS_ENDPOINT = (
     "https://www.gis.hctx.net/arcgis/rest/services/HCAD/Parcels/MapServer/0/query"
 )
 
-# Confirmed field names from live HCAD ArcGIS layer metadata
+# Confirmed field names from live HCAD ArcGIS layer (verified via diagnostic)
 OUT_FIELDS = ",".join([
     "HCAD_NUM",
     "acct_num",
-    "owner_nam_1",       # confirmed: nam not name
-    "SiteAddress",       # confirmed: single full address string
+    "owner_name_1",      # confirmed: full "name" not "nam"
+    "owner_name_2",
+    "site_str_num",      # house number e.g. "402"
+    "site_str_pfx",      # directional prefix e.g. "E"
+    "site_str_name",     # street name e.g. "26TH" or "KOWIS"
+    "site_str_sfx",      # street type e.g. "ST"
+    "site_city",         # city e.g. "HOUSTON"
     "StateClass",        # property type code
     "mail_addr_1",
     "mail_addr_2",
@@ -76,9 +81,9 @@ OUT_FIELDS = ",".join([
     "mail_state",
     "mail_zip",
     "total_appraised_val",
-    "land_value",
-    "impr_value",        # confirmed: improvement value (not bld_value)
     "total_market_val",
+    "land_value",
+    "impr_value",        # improvement/building value
     "new_owner_date",
     "land_sqft",
 ])
@@ -204,16 +209,16 @@ class HarrisCountyGISClient:
 
         if street_name:
             name = street_name.strip().upper()
-            # SiteAddress holds the full address as one string e.g. "5930 KOWIS ST"
-            clauses.append(f"SiteAddress LIKE '%{name}%'")
+            # site_str_name holds the street name only e.g. "KOWIS" or "26TH"
+            clauses.append(f"site_str_name LIKE '%{name}%'")
 
         if street_num:
             num = street_num.strip()
-            clauses.append(f"SiteAddress LIKE '{num}%'")
+            clauses.append(f"site_str_num = '{num}'")
 
         if site_zip:
-            # Zip is embedded in SiteAddress string
-            clauses.append(f"SiteAddress LIKE '%{site_zip.strip()}%'")
+            # No site zip field in this layer — filter by city instead
+            clauses.append(f"site_city = 'HOUSTON'")
 
         if not clauses:
             raise ValueError(
@@ -317,8 +322,23 @@ class HarrisCountyGISClient:
             except (ValueError, TypeError):
                 return None
 
-        # ── Property address (single string in live layer) ───────────────────
-        property_address = safe_str(attrs.get("SiteAddress"))
+        # ── Property address (assembled from confirmed split fields) ─────────
+        addr_parts = filter(None, [
+            safe_str(attrs.get("site_str_num")),
+            safe_str(attrs.get("site_str_pfx")),
+            safe_str(attrs.get("site_str_name")),
+            safe_str(attrs.get("site_str_sfx")),
+        ])
+        site_city = safe_str(attrs.get("site_city")) or "HOUSTON"
+        property_address = " ".join(addr_parts).strip()
+        if property_address:
+            property_address = f"{property_address}, {site_city}, TX"
+
+        # ── Owner name (may have 2 owners on one parcel) ─────────────────────
+        owner = safe_str(attrs.get("owner_name_1"))
+        owner2 = safe_str(attrs.get("owner_name_2"))
+        if owner2:
+            owner = f"{owner} / {owner2}"
 
         # ── Mailing address ──────────────────────────────────────────────────
         mailing_parts = filter(None, [
@@ -330,19 +350,31 @@ class HarrisCountyGISClient:
         ])
         mailing_address = ", ".join(mailing_parts).strip()
 
+        # ── Transfer date: ArcGIS returns Unix ms timestamp ──────────────────
+        transfer_raw = attrs.get("new_owner_date")
+        transfer_date = ""
+        if transfer_raw:
+            try:
+                import datetime
+                transfer_date = datetime.datetime.utcfromtimestamp(
+                    int(transfer_raw) / 1000
+                ).strftime("%Y-%m-%d")
+            except Exception:
+                transfer_date = safe_str(transfer_raw)
+
         return {
             "hcad_num":         safe_str(attrs.get("HCAD_NUM")),
             "acct_num":         safe_str(attrs.get("acct_num")),
-            "owner_name":       safe_str(attrs.get("owner_nam_1")),   # nam not name
+            "owner_name":       owner,
             "mailing_address":  mailing_address,
             "property_address": property_address,
             "property_type":    safe_str(attrs.get("StateClass")),
             "appraised_value":  safe_money(attrs.get("total_appraised_val")),
             "market_value":     safe_money(attrs.get("total_market_val")),
             "land_value":       safe_money(attrs.get("land_value")),
-            "building_value":   safe_money(attrs.get("impr_value")),  # impr not bld
+            "building_value":   safe_money(attrs.get("impr_value")),
             "land_sqft":        safe_money(attrs.get("land_sqft")),
-            "transfer_date":    safe_str(attrs.get("new_owner_date")),
+            "transfer_date":    transfer_date,
         }
 
     # ── Display helper ────────────────────────────────────────────────────────
