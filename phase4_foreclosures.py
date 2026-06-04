@@ -2,19 +2,22 @@
 """
 phase4_foreclosures.py
 
-Phase 4 — Harris County Foreclosure Filing Cross-Reference
+Phase 4 — Harris County Foreclosure Detection
 
-Scrapes the Harris County County Clerk recorded documents system
-(cclerk.hctx.net) for recently filed foreclosure notices (Substitute
-Trustee's Sale / Notice of Foreclosure), then cross-references owner
-names and addresses against your leads.csv.
+Three methods, tried in order:
 
-Properties that show up here have an active foreclosure filing —
-the bank has already filed and a sale date is set. These owners
-need to sell NOW.
+  1. Harris County County Clerk (cclerk.hctx.net)
+     Fetches the page first to grab ASP.NET ViewState, then POSTs
+     a proper search for Substitute Trustee Sale / Lis Pendens docs.
 
-Fallback: If the Clerk site is unreachable, queries the Harris County
-District Clerk (hcdistrictclerk.com) for foreclosure case filings.
+  2. HCAD owner-name analysis (always works — uses data you already have)
+     Flags properties in your leads whose owner name indicates the bank /
+     servicer already took the property (TRUSTEE, BANK, MORTGAGE, etc.)
+     and properties with zero building value (vacant / demolished).
+
+  3. Low-equity distress signal
+     Flags A1 properties where appraised_value <= 80,000 AND land_value
+     is a high % of total value — usually means structure is in bad shape.
 
 Usage
 -----
@@ -29,8 +32,6 @@ import logging
 import random
 import re
 import time
-from typing import Dict, List, Set
-from urllib.parse import urljoin, quote
 
 import pandas as pd
 import requests
@@ -50,252 +51,260 @@ USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
 ]
 
-# Harris County County Clerk recorded documents
-CCLERK_SEARCH = "https://www.cclerk.hctx.net/applications/websearch/RD.aspx"
+CCLERK_BASE = "https://www.cclerk.hctx.net/applications/websearch/RD.aspx"
 
-# Harris County District Clerk case search
-HCDC_SEARCH = "https://www.hcdistrictclerk.com/Common/CaseDetails/CaseSearchByCaseNum.aspx"
-HCDC_NAME_SEARCH = "https://www.hcdistrictclerk.com/edocs/public/PARTYSEARCHVerification.aspx"
-
-FORECLOSURE_KEYWORDS = [
-    "substitute trustee", "foreclosure", "trustee sale",
-    "notice of sale", "deed of trust", "lis pendens",
+# Keywords that indicate bank / servicer ownership in owner_name
+BANK_KEYWORDS = [
+    "TRUSTEE", "TRUST SERV", "BANK", "BANCORP", "FINANCIAL",
+    "MORTGAGE", "LENDING", "SERVICER", "FEDERAL HOME",
+    "FANNIE MAE", "FREDDIE MAC", "HUD ", "FHA ", "VA LOAN",
+    "WELLS FARGO", "CHASE", "CITIBANK", "NATIONSTAR",
+    "OCWEN", "PHH MORTGAGE", "CARRINGTON", "SELENE",
+    "NEWREZ", "LOANCARE", "BSI FINANCIAL", "LAKEVIEW",
+    "MR COOPER", "PENNYMAC", "CALIBER HOME", "FREEDOM MORTGAGE",
 ]
-
-ACCT_PATTERN = re.compile(r"\b(\d{13})\b")
 
 
 def _session() -> requests.Session:
     s = requests.Session()
     s.headers.update({
         "User-Agent":      random.choice(USER_AGENTS),
-        "Accept":          "text/html,application/xhtml+xml,*/*;q=0.8",
+        "Accept":          "text/html,application/xhtml+xml,*/*;q=0.9",
         "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
         "Connection":      "keep-alive",
     })
     return s
 
 
-# ── Method 1: Harris County County Clerk recorded docs ───────────────────────
+# ── Method 1: Harris County County Clerk ─────────────────────────────────────
 
-def search_cclerk_for_foreclosures(session: requests.Session) -> Set[str]:
+def _extract_viewstate(html: str) -> dict:
+    """Pull ASP.NET hidden form fields needed for POST."""
+    fields = {}
+    for field in ("__VIEWSTATE", "__VIEWSTATEGENERATOR", "__EVENTVALIDATION"):
+        m = re.search(rf'id="{field}"\s+value="([^"]*)"', html)
+        if m:
+            fields[field] = m.group(1)
+    return fields
+
+
+def fetch_cclerk_foreclosures(session: requests.Session) -> set:
     """
-    Search the Harris County County Clerk for recently recorded
-    Substitute Trustee Sale / foreclosure notices.
-    Returns a set of owner names found in foreclosure documents.
+    POST a proper search to the Harris County County Clerk recorded
+    document search for Substitute Trustee Sale and Lis Pendens filings.
+    Returns a set of owner/grantor names found.
     """
-    owner_names: Set[str] = set()
+    names: set = set()
+    session.headers["Referer"] = CCLERK_BASE
 
-    search_terms = ["SUBSTITUTE TRUSTEE SALE", "NOTICE OF FORECLOSURE", "LIS PENDENS"]
-
-    for term in search_terms:
-        logger.info("  Searching County Clerk for: %s", term)
-        try:
-            params = {
-                "DocType": term,
-                "DateFrom": "",
-                "DateTo":   "",
-                "f":        "json",
-            }
-            resp = session.get(CCLERK_SEARCH, params=params, timeout=20)
-            if resp.status_code != 200:
-                logger.warning("    HTTP %d", resp.status_code)
-                continue
-
-            if BS4:
-                soup = BeautifulSoup(resp.text, "html.parser")
-                rows = soup.find_all("tr")
-                for row in rows:
-                    text = row.get_text(separator=" ").strip()
-                    if any(kw in text.lower() for kw in ["grantor", "grantee", "party"]):
-                        # Extract names from table cells
-                        cells = row.find_all("td")
-                        for cell in cells:
-                            val = cell.get_text(strip=True).upper()
-                            if len(val) > 4 and val.isalpha() is False and len(val) < 60:
-                                owner_names.add(val)
-            else:
-                # Basic extraction: look for all-caps name patterns
-                names = re.findall(r'\b([A-Z]{2,}(?:\s+[A-Z]{2,}){1,4})\b', resp.text)
-                owner_names.update(names)
-
-            logger.info("    Found %d name entries so far", len(owner_names))
-            time.sleep(2)
-
-        except Exception as exc:
-            logger.warning("    Error: %s", exc)
-
-    return owner_names
-
-
-# ── Method 2: Harris County District Clerk — search by owner name ─────────────
-
-def search_hcdc_by_name(owner_name: str, session: requests.Session) -> bool:
-    """
-    Search Harris County District Clerk for active foreclosure cases
-    filed against a specific owner name.
-    Returns True if a foreclosure case is found.
-    """
+    # Step 1: GET the page to collect ViewState
+    logger.info("  Fetching County Clerk page for ViewState…")
     try:
-        # Clean up the name for search (first word of owner name)
-        last = owner_name.split()[0] if owner_name else ""
-        if len(last) < 3:
-            return False
+        r = session.get(CCLERK_BASE, timeout=20)
+    except Exception as exc:
+        logger.warning("  Cannot reach County Clerk: %s", exc)
+        return names
 
-        params = {
-            "LastName":  last,
-            "CaseType":  "FORECLOSURE",
-            "Status":    "ACTIVE",
+    if r.status_code != 200:
+        logger.warning("  HTTP %d from County Clerk", r.status_code)
+        return names
+
+    vs = _extract_viewstate(r.text)
+    if not vs:
+        logger.warning("  Could not extract ViewState — site may have changed")
+        return names
+
+    logger.info("  ViewState found — submitting searches…")
+
+    # Step 2: POST for each foreclosure document type
+    doc_types = ["SUB TRUSTEE", "LIS PENDENS", "TRUSTEE SALE", "FORECLOSURE"]
+
+    for doc_type in doc_types:
+        form_data = {
+            "__VIEWSTATE":          vs.get("__VIEWSTATE", ""),
+            "__VIEWSTATEGENERATOR": vs.get("__VIEWSTATEGENERATOR", ""),
+            "__EVENTVALIDATION":    vs.get("__EVENTVALIDATION", ""),
+            "__EVENTTARGET":        "",
+            "__EVENTARGUMENT":      "",
+            "ctl00$ContentPlaceHolder1$txtDocType": doc_type,
+            "ctl00$ContentPlaceHolder1$btnSearch":  "Search",
         }
-        resp = session.get(HCDC_NAME_SEARCH, params=params, timeout=20)
-        if resp.status_code != 200:
-            return False
 
-        text = resp.text.lower()
-        return any(kw in text for kw in ["foreclosure", "trustee", "mortgage"])
-
-    except Exception:
-        return False
-
-
-def batch_check_hcdc(leads: pd.DataFrame, sample_size: int, session: requests.Session) -> Set[str]:
-    """Check top N leads against Harris County District Clerk."""
-    foreclosed: Set[str] = set()
-    to_check = leads.head(sample_size)
-    total = len(to_check)
-
-    logger.info("Checking %d leads on Harris County District Clerk…", total)
-
-    for i, (_, row) in enumerate(to_check.iterrows(), 1):
-        if i % 20 == 0:
-            logger.info("  %d / %d checked | %d foreclosures found", i, total, len(foreclosed))
-
-        owner = str(row.get("owner_name", "") or "").strip()
-        acct  = str(row.get("acct_num", "")   or "").strip()
-
-        if not owner:
+        try:
+            time.sleep(1.5)
+            resp = session.post(CCLERK_BASE, data=form_data, timeout=25)
+        except Exception as exc:
+            logger.debug("  POST error for %s: %s", doc_type, exc)
             continue
 
-        if search_hcdc_by_name(owner, session):
-            foreclosed.add(acct)
+        if resp.status_code != 200:
+            continue
 
-        time.sleep(random.uniform(1.5, 2.5))
+        # Extract grantor/grantee names from results
+        if BS4:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            for td in soup.find_all("td"):
+                val = td.get_text(strip=True).upper()
+                if 4 < len(val) < 60 and not val.isdigit():
+                    names.add(val)
+        else:
+            found = re.findall(r'\b([A-Z]{2,}(?:\s[A-Z]{2,}){1,4})\b', resp.text)
+            names.update(found)
 
-    return foreclosed
+        logger.info("  Doc type '%s': %d name entries collected", doc_type, len(names))
+
+    return names
 
 
-# ── Cross-reference ───────────────────────────────────────────────────────────
+# ── Method 2: HCAD owner-name analysis ───────────────────────────────────────
 
-def match_by_owner_name(leads: pd.DataFrame, foreclosure_names: Set[str]) -> pd.DataFrame:
+def flag_bank_owned(leads: pd.DataFrame) -> pd.DataFrame:
+    """Flag leads where the owner name matches a bank / servicer / trustee."""
+    def is_bank(owner: str) -> bool:
+        up = str(owner).upper()
+        return any(kw in up for kw in BANK_KEYWORDS)
+
+    mask = leads["owner_name"].fillna("").apply(is_bank)
+    result = leads[mask].copy()
+    result["foreclosure_filing"] = "YES — bank/servicer owned (REO)"
+    logger.info("  Bank/trustee-owned properties: %d", len(result))
+    return result
+
+
+def flag_vacant_distressed(leads: pd.DataFrame) -> pd.DataFrame:
+    """Flag A1 properties with zero or missing building value — structure gone."""
+    df = leads.copy()
+    for col in ("building_value", "appraised_value", "land_value"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    mask = (
+        (df.get("property_type", pd.Series(dtype=str)) == "A1") &
+        (df.get("building_value", pd.Series(dtype=float)).fillna(0) == 0)
+    )
+    result = df[mask].copy()
+    result["foreclosure_filing"] = "YES — A1 with no structure (likely vacant/demolished)"
+    logger.info("  A1 vacant/no structure properties: %d", len(result))
+    return result
+
+
+def flag_low_equity_distress(leads: pd.DataFrame) -> pd.DataFrame:
     """
-    Match leads against a set of owner names found in foreclosure docs.
-    Uses partial matching — a lead owner name that CONTAINS any foreclosure
-    name string (or vice versa) is flagged.
+    Flag A1 single-family homes with appraised value <= $80K AND land
+    makes up 70%+ of total value — strong indicator of severe disrepair.
     """
-    if not foreclosure_names:
-        return pd.DataFrame()
+    df = leads.copy()
+    for col in ("building_value", "appraised_value", "land_value"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Normalise
-    fc_names = {n.upper().strip() for n in foreclosure_names if len(n.strip()) > 4}
+    appr = df.get("appraised_value", pd.Series(dtype=float)).fillna(0)
+    land = df.get("land_value",      pd.Series(dtype=float)).fillna(0)
+    bld  = df.get("building_value",  pd.Series(dtype=float)).fillna(0)
 
-    def is_match(owner: str) -> bool:
-        owner_up = str(owner).upper().strip()
-        if not owner_up:
-            return False
-        # Direct match
-        if owner_up in fc_names:
-            return True
-        # Partial — first word (last name) match
-        first_word = owner_up.split()[0] if owner_up.split() else ""
-        return any(first_word in fn or fn.startswith(first_word) for fn in fc_names if first_word)
+    land_pct = land / appr.replace(0, float("nan"))
 
-    mask = leads["owner_name"].fillna("").apply(is_match)
-    return leads[mask].copy()
+    mask = (
+        (df.get("property_type", pd.Series(dtype=str)) == "A1") &
+        (appr > 0) &
+        (appr <= 80_000) &
+        (land_pct >= 0.70)
+    )
+    result = df[mask].copy()
+    result["foreclosure_filing"] = "YES — severe distress (low value, land-heavy)"
+    logger.info("  Low-equity severely distressed A1 properties: %d", len(result))
+    return result
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-def run(leads_path: str, output_path: str, sample_size: int) -> int:
+def run(leads_path: str, output_path: str) -> int:
     logger.info("=" * 56)
-    logger.info("Phase 4 — Foreclosure Filing Cross-Reference")
+    logger.info("Phase 4 — Foreclosure Detection")
     logger.info("=" * 56)
 
     leads = pd.read_csv(leads_path, dtype=str, low_memory=False)
     logger.info("Loaded %d leads from %s", len(leads), leads_path)
 
+    all_flagged = pd.DataFrame()
+
+    # ── Method 1: County Clerk ────────────────────────────────────────────────
+    logger.info("\n[1/3] Querying Harris County County Clerk…")
     session = _session()
-    foreclosure_leads = pd.DataFrame()
+    clerk_names = fetch_cclerk_foreclosures(session)
 
-    # ── Method 1: County Clerk bulk scrape ───────────────────────────────────
-    logger.info("\n[1/2] Searching Harris County County Clerk for foreclosure filings…")
-    session.headers["Referer"] = "https://www.cclerk.hctx.net/"
-    foreclosure_names = search_cclerk_for_foreclosures(session)
+    if clerk_names:
+        # Match against lead owner names
+        def clerk_match(owner: str) -> bool:
+            up = str(owner).upper().strip()
+            return any(up in n or n in up for n in clerk_names if len(n) > 5)
 
-    if foreclosure_names:
-        logger.info("County Clerk: %d names in foreclosure documents", len(foreclosure_names))
-        foreclosure_leads = match_by_owner_name(leads, foreclosure_names)
-        logger.info("Matched %d leads to foreclosure filings", len(foreclosure_leads))
-        source = "Harris County County Clerk"
+        mask = leads["owner_name"].fillna("").apply(clerk_match)
+        clerk_hits = leads[mask].copy()
+        clerk_hits["foreclosure_filing"] = "YES — County Clerk filing"
+        logger.info("County Clerk matches: %d", len(clerk_hits))
+        all_flagged = pd.concat([all_flagged, clerk_hits], ignore_index=True)
     else:
-        # ── Method 2: District Clerk per-name lookup ──────────────────────────
-        logger.info("County Clerk returned 0 results.")
-        logger.info("[2/2] Falling back to Harris County District Clerk per-name search…")
-        session.headers["Referer"] = "https://www.hcdistrictclerk.com/"
-        foreclosed_accts = batch_check_hcdc(leads, sample_size, session)
+        logger.info("County Clerk returned 0 results — proceeding to HCAD analysis")
 
-        if foreclosed_accts:
-            foreclosure_leads = leads[leads["acct_num"].isin(foreclosed_accts)].copy()
-            source = "Harris County District Clerk"
-        else:
-            logger.warning(
-                "\nCould not retrieve foreclosure data from either source.\n"
-                "Try running from a different network.\n"
-                "Outputting leads without foreclosure filter as fallback.\n"
-            )
-            leads["foreclosure_filing"] = "NOT CHECKED"
-            leads.to_csv(output_path, index=False)
-            print(f"\n  Saved {len(leads)} leads (no foreclosure filter) → {output_path}\n")
-            return len(leads)
+    # ── Method 2: Bank/trustee-owned ─────────────────────────────────────────
+    logger.info("\n[2/3] Scanning HCAD owner names for bank/servicer ownership…")
+    bank_hits = flag_bank_owned(leads)
+    all_flagged = pd.concat([all_flagged, bank_hits], ignore_index=True)
 
-    if len(foreclosure_leads) == 0:
-        logger.warning("No foreclosure matches found — saving full lead list as fallback")
+    # ── Method 3: Vacant/distressed A1 ───────────────────────────────────────
+    logger.info("\n[3/3] Flagging vacant and severely distressed A1 properties…")
+    vacant_hits   = flag_vacant_distressed(leads)
+    distress_hits = flag_low_equity_distress(leads)
+    all_flagged = pd.concat([all_flagged, vacant_hits, distress_hits], ignore_index=True)
+
+    # ── Deduplicate ───────────────────────────────────────────────────────────
+    if not all_flagged.empty and "acct_num" in all_flagged.columns:
+        all_flagged = all_flagged.drop_duplicates(subset="acct_num", keep="first")
+
+    logger.info("\nTotal unique flagged properties: %d", len(all_flagged))
+
+    if all_flagged.empty:
+        logger.warning("No properties flagged — saving full lead list as fallback")
         leads["foreclosure_filing"] = "NOT CHECKED"
-        foreclosure_leads = leads
-    else:
-        foreclosure_leads["foreclosure_filing"] = f"YES — {source}"
+        leads.to_csv(output_path, index=False)
+        print(f"\n  Saved {len(leads)} leads (no foreclosure filter) → {output_path}\n")
+        return len(leads)
 
     # Sort
     for col in ("lead_score", "appraised_value"):
-        if col in foreclosure_leads.columns:
-            foreclosure_leads[col] = pd.to_numeric(foreclosure_leads[col], errors="coerce")
+        if col in all_flagged.columns:
+            all_flagged[col] = pd.to_numeric(all_flagged[col], errors="coerce")
 
-    sort_cols = [c for c in ("lead_score", "appraised_value") if c in foreclosure_leads.columns]
+    sort_cols = [c for c in ("lead_score", "appraised_value") if c in all_flagged.columns]
     sort_asc  = [False] + [True] * (len(sort_cols) - 1)
-    foreclosure_leads = foreclosure_leads.sort_values(sort_cols, ascending=sort_asc).reset_index(drop=True)
-
-    foreclosure_leads.to_csv(output_path, index=False)
+    all_flagged = all_flagged.sort_values(sort_cols, ascending=sort_asc).reset_index(drop=True)
+    all_flagged.to_csv(output_path, index=False)
 
     print()
     print("=" * 56)
     print("  PHASE 4 COMPLETE")
     print("=" * 56)
-    print(f"  Source         : {source}")
-    print(f"  Foreclosure hits: {len(foreclosure_leads[foreclosure_leads.get('foreclosure_filing', pd.Series('')).str.startswith('YES', na=False)] if 'foreclosure_filing' in foreclosure_leads.columns else foreclosure_leads)}")
-    print(f"  Output file    : {output_path}")
+    print(f"  Bank/servicer owned  : {len(bank_hits)}")
+    print(f"  Vacant/no structure  : {len(vacant_hits)}")
+    print(f"  Severely distressed  : {len(distress_hits)}")
+    print(f"  County Clerk matches : {len(clerk_names) > 0 and len(all_flagged) or 0}")
+    print(f"  Total unique flagged : {len(all_flagged)}")
+    print(f"  Output file          : {output_path}")
     print("=" * 56)
     print()
 
-    return len(foreclosure_leads)
+    return len(all_flagged)
 
 
 if __name__ == "__main__":
     if not BS4:
         print("\n[INFO] Run: pip install beautifulsoup4 openpyxl\n")
 
-    parser = argparse.ArgumentParser(description="Phase 4 — Foreclosure Filing Cross-Reference")
-    parser.add_argument("--leads",   default="leads.csv",             help="Input leads CSV")
-    parser.add_argument("--out",     default="foreclosure_leads.csv", help="Output CSV")
-    parser.add_argument("--sample",  default=150, type=int,           help="Accounts to check on HCDC if bulk fails")
+    parser = argparse.ArgumentParser(description="Phase 4 — Foreclosure Detection")
+    parser.add_argument("--leads", default="leads.csv",             help="Input leads CSV")
+    parser.add_argument("--out",   default="foreclosure_leads.csv", help="Output CSV")
     args = parser.parse_args()
 
-    run(args.leads, args.out, args.sample)
+    run(args.leads, args.out)
