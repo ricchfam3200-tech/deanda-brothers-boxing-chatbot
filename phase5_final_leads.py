@@ -217,12 +217,15 @@ def run(leads_path: str,
         ["final_score", "appraised_value"],
         ascending=[False, True],
     ).reset_index(drop=True)
+    if "rank" in final.columns:
+        final = final.drop(columns=["rank"])
     final.insert(0, "rank", range(1, len(final) + 1))
 
     final.to_csv(output_path, index=False)
 
     # ── Summary ───────────────────────────────────────────────────────────────
-    top10 = final.head(10)[["rank", "owner_name", "property_address", "appraised_value", "final_score", "final_signals"]]
+    top10_cols = [c for c in ["rank", "owner_name", "property_address", "appraised_value", "final_score", "final_signals"] if c in final.columns]
+    top10 = final.head(10)[top10_cols]
 
     print()
     print("=" * 56)
