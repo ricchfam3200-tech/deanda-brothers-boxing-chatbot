@@ -559,7 +559,13 @@ def run(streets_csv: str, zip_arg: str, output_path: str,
             print()
 
     print("=" * 60)
-    print(f"\n  Open {output_path} in Google Sheets — your leads are ready.\n")
+    print(f"\n  Opening {output_path}...\n")
+
+    try:
+        os.startfile(os.path.abspath(output_path))
+    except Exception:
+        print(f"  Could not auto-open file. Find it here:")
+        print(f"  {os.path.abspath(output_path)}\n")
 
     return len(final)
 
