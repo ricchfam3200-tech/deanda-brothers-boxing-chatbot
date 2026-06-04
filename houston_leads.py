@@ -461,28 +461,38 @@ def score_lead(row: pd.Series, delinquent_accts: Set[str]) -> tuple:
 # ═════════════════════════════════════════════════════════════════════════════
 
 def run(streets_csv: str, zip_arg: str, output_path: str,
-        lgbs_file: str, min_score: int) -> int:
+        lgbs_file: str, min_score: int, from_csv: str = None) -> int:
 
     print()
     print("=" * 60)
     print("  HOUSTON WHOLESALE LEAD ENGINE")
     print("=" * 60)
 
-    # ── 1. Pull HCAD data ─────────────────────────────────────────────────────
-    print("\n[1/4] Pulling HCAD property data...")
-    zip_codes = None
-    if zip_arg:
-        zip_codes = TARGET_ZIPS if zip_arg.lower() == "all" else [zip_arg.strip()]
+    # ── 1. Load or pull HCAD data ─────────────────────────────────────────────
+    if from_csv:
+        print(f"\n[1/4] Loading existing data from {from_csv}...")
+        if not os.path.exists(from_csv):
+            print(f"\n  ERROR: File not found: {from_csv}\n")
+            return 0
+        df = pd.read_csv(from_csv, dtype=str, low_memory=False)
+        print(f"  {len(df)} properties loaded")
+    else:
+        print("\n[1/4] Pulling HCAD property data...")
+        zip_codes = None
+        if zip_arg:
+            zip_codes = TARGET_ZIPS if zip_arg.lower() == "all" else [zip_arg.strip()]
 
-    df = pull_hcad(streets_csv=streets_csv, zip_codes=zip_codes)
+        df = pull_hcad(streets_csv=streets_csv, zip_codes=zip_codes)
 
-    if df.empty:
-        print("\n  No data returned. Check your internet connection.")
-        print("  Note: Harris County GIS blocks some networks.")
-        print("  Run from a home/residential internet connection.\n")
-        return 0
+        if df.empty:
+            print("\n  No data returned from HCAD.")
+            print("  Harris County GIS blocks some networks.")
+            print("  Try running from a home internet connection.")
+            print("\n  TIP: If you already have results.csv, run:")
+            print("       python houston_leads.py --from-csv results.csv\n")
+            return 0
 
-    print(f"  {len(df)} total properties pulled")
+        print(f"  {len(df)} total properties pulled")
 
     # ── 2. Filter: individuals only, remove government ────────────────────────
     print("\n[2/4] Filtering for individual owners...")
@@ -560,12 +570,14 @@ if __name__ == "__main__":
         description="Houston Wholesale Lead Engine — pulls HCAD data and scores motivated sellers"
     )
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--streets", metavar="CSV",  help="CSV file with street_name column (e.g. sample_input.csv)")
-    mode.add_argument("--zip",     metavar="ZIP",  help="Zip code to sweep, e.g. 77028, or 'all' for all 10 target zips")
+    mode.add_argument("--streets",   metavar="CSV", help="CSV file with street_name column (e.g. sample_input.csv)")
+    mode.add_argument("--zip",       metavar="ZIP", help="Zip code to sweep, e.g. 77028, or 'all' for all 10 target zips")
+    mode.add_argument("--from-csv",  metavar="CSV", help="Use existing results.csv instead of pulling fresh HCAD data")
 
     parser.add_argument("--out",       default="final_leads.csv", help="Output file (default: final_leads.csv)")
-    parser.add_argument("--lgbs-file", default="",                help="Path to downloaded LGBS Excel/CSV file for tax delinquent cross-reference")
+    parser.add_argument("--lgbs-file", default="",                help="Path to downloaded LGBS Excel/CSV for tax delinquent cross-reference")
     parser.add_argument("--min-score", default=3, type=int,       help="Minimum lead score 0-10 (default: 3)")
 
     args = parser.parse_args()
-    run(args.streets, args.zip, args.out, args.lgbs_file, args.min_score)
+    run(args.streets, args.zip, args.out, args.lgbs_file, args.min_score,
+        from_csv=getattr(args, "from_csv", None))
