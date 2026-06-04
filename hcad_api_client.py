@@ -209,8 +209,8 @@ class HarrisCountyGISClient:
 
         if street_name:
             name = street_name.strip().upper()
-            # site_str_name holds the street name only e.g. "KOWIS" or "26TH"
-            clauses.append(f"site_str_name LIKE '%{name}%'")
+            # Exact match required — LIKE is not supported on this field
+            clauses.append(f"site_str_name = '{name}'")
 
         if street_num:
             num = street_num.strip()
