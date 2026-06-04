@@ -71,6 +71,15 @@ LGBS_URLS = [
     "https://lgbs.com/",
 ]
 
+# taxsales.lgbs.com API — the actual portal seen at taxsales.lgbs.com/map
+TAXSALES_API_URLS = [
+    "https://taxsales.lgbs.com/api/properties/?county=harris&limit=500&offset=0",
+    "https://taxsales.lgbs.com/api/sales/?sale_county=HARRIS+COUNTY&limit=500&offset=0",
+    "https://taxsales.lgbs.com/api/properties/?sale_county=HARRIS&sale_type=SALE,RESALE&limit=500",
+    "https://taxsales.lgbs.com/api/v1/properties/?county=harris&limit=500",
+    "https://taxsales.lgbs.com/properties/?format=json&county=harris&limit=500",
+]
+
 HCTAX_SEARCH = "https://www.hctax.net/Property/PropertySearch"
 
 
@@ -125,9 +134,109 @@ def parse_lgbs_file(path: str) -> Set[str]:
 
 # ── Auto: scrape LGBS website ─────────────────────────────────────────────────
 
+def fetch_taxsales_api(session: requests.Session) -> Set[str]:
+    """
+    Try the taxsales.lgbs.com JSON API directly.
+    Extracts account numbers and property addresses from the JSON response.
+    """
+    accounts: Set[str] = set()
+    session.headers.update({
+        "Accept":  "application/json, text/javascript, */*; q=0.01",
+        "Referer": "https://taxsales.lgbs.com/",
+        "X-Requested-With": "XMLHttpRequest",
+    })
+
+    for url in TAXSALES_API_URLS:
+        logger.info("  Trying taxsales API: %s", url)
+        try:
+            resp = session.get(url, timeout=20)
+            if resp.status_code == 200:
+                try:
+                    data = resp.json()
+                except ValueError:
+                    continue
+
+                # Handle various JSON shapes
+                records = []
+                if isinstance(data, list):
+                    records = data
+                elif isinstance(data, dict):
+                    for key in ("results", "properties", "data", "items", "features"):
+                        if key in data and isinstance(data[key], list):
+                            records = data[key]
+                            break
+
+                if records:
+                    logger.info("  Found %d records from taxsales API", len(records))
+                    for rec in records:
+                        # Look for account number fields
+                        for field in ("account_number", "acct_num", "account", "acct",
+                                      "hcad_num", "parcel_id", "apn"):
+                            val = str(rec.get(field, "") or "")
+                            if re.match(r"^\d{8,13}$", val.strip()):
+                                accounts.add(val.strip().zfill(13))
+
+                        # Also extract 13-digit numbers from the full record text
+                        rec_text = str(rec)
+                        accounts.update(ACCT_PATTERN.findall(rec_text))
+
+                    logger.info("  Extracted %d account numbers", len(accounts))
+                    if accounts:
+                        return accounts
+                else:
+                    # Try extracting account numbers from raw JSON text
+                    raw_accounts = set(ACCT_PATTERN.findall(resp.text))
+                    if raw_accounts:
+                        logger.info("  Found %d account numbers in raw JSON", len(raw_accounts))
+                        accounts.update(raw_accounts)
+                        return accounts
+            else:
+                logger.debug("  HTTP %d from %s", resp.status_code, url)
+        except Exception as exc:
+            logger.debug("  Error: %s", exc)
+        time.sleep(1)
+
+    return accounts
+
+
+def fetch_taxsales_map_page(session: requests.Session) -> Set[str]:
+    """
+    Scrape the taxsales.lgbs.com map page directly and extract
+    all account numbers and addresses from the HTML.
+    """
+    accounts: Set[str] = set()
+    url = "https://taxsales.lgbs.com/map/lat=-95.3698&lng=29.7604&zoom=11&sale_county=HARRIS+COUNTY&sale_type=SALE,RESALE&limit=500"
+
+    session.headers.update({"Referer": "https://taxsales.lgbs.com/"})
+    try:
+        resp = session.get(url, timeout=25)
+        if resp.status_code == 200:
+            raw = set(ACCT_PATTERN.findall(resp.text))
+            accounts.update(raw)
+            logger.info("  taxsales map page: %d account numbers found", len(accounts))
+    except Exception as exc:
+        logger.debug("  Map page error: %s", exc)
+
+    return accounts
+
+
 def fetch_lgbs_auto(session: requests.Session) -> Set[str]:
     """Try to pull LGBS Harris County sale list automatically."""
     all_accounts: Set[str] = set()
+
+    # Try taxsales.lgbs.com API first (the portal the user found)
+    logger.info("  Trying taxsales.lgbs.com API…")
+    api_accounts = fetch_taxsales_api(session)
+    all_accounts.update(api_accounts)
+    if all_accounts:
+        return all_accounts
+
+    # Try map page scrape
+    logger.info("  Trying taxsales.lgbs.com map page…")
+    map_accounts = fetch_taxsales_map_page(session)
+    all_accounts.update(map_accounts)
+    if all_accounts:
+        return all_accounts
 
     for url in LGBS_URLS:
         logger.info("Trying LGBS URL: %s", url)
