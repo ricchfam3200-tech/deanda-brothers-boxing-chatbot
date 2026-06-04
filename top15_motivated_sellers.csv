@@ -1,16 +1,23 @@
-Rank,Address,Owner Name,Ownership Length,Estimated Equity %,Estimated Equity $,Notes
-1,7868 Green Lawn Dr Houston TX 77088,Anthony Andrews,30 yrs 10 mo,100%,$180000,Out of state (CO) - owns 2 properties on same street
-2,8911 Lakeworth Dr Houston TX 77088,Joyce Breeler,30 yrs 3 mo,100%,$221837,Out of state (TN)
-3,7609 Gleason Rd Houston TX 77016,Earl & Barbara Wheatfall,29 yrs 2 mo,100%,$142637,Out of state (WI)
-4,975 Dolly Wright St Houston TX 77088,Jules Arceneau,28 yrs,100%,$89000,Out of state (CA)
-5,6107 Elkwood Forest Dr Houston TX 77088,Deborah Lewis,27 yrs 3 mo,100%,$222097,Out of state (LA)
-6,7227 Lockwood Dr Houston TX 77016,Earnest & Catherine Green,26 yrs 3 mo,100%,$88709,Out of state (CA)
-7,7866 Green Lawn Dr Houston TX 77088,Anthony Andrews,26 yrs,100%,$195768,Out of state (CO) - owns 2 properties on same street
-8,7326 Yoe St Houston TX 77016,Chimira Keener,32 yrs 5 mo,100%,$158882,Texas owner
-9,6815 Hopper Rd Houston TX 77016,James & Patsy Laymond,32 yrs 4 mo,100%,$97412,Texas owner - owns 2 properties
-10,10229 Royal Oaks Dr Houston TX 77016,Dorothy Jones,32 yrs 3 mo,100%,$160000,Texas owner
-11,9417 Camay Dr Houston TX 77016,Jose Bravo,32 yrs 1 mo,100%,$119347,Texas owner
-12,10342 Castleton St Houston TX 77016,Darryl Sloan,31 yrs 10 mo,100%,$166457,Texas owner
-13,6603 Cobalt St Houston TX 77016,James & Patsy Laymond,31 yrs 9 mo,100%,$134383,Texas owner - owns 2 properties
-14,7226 Haverton Dr Houston TX 77016,Douglas & Marie George,26 yrs 7 mo,103%,$227364,Texas owner - equity exceeds assessed value
-15,5318 Pate Rd Houston TX 77016,Alberto Rico,25 yrs 11 mo,111%,$254207,Texas owner - highest equity dollar amount in list
+Rank,Address,Owner Name,Ownership Length,Estimated Equity %,Estimated Equity $,Score,Out of State,Notes
+1,7868 Green Lawn Dr Houston TX 77088,Anthony Andrews,30 yrs 10 mo,100%,$180000,10,YES - Colorado,Owns 2 properties on same street - pitch portfolio deal
+2,8911 Lakeworth Dr Houston TX 77088,Joyce Breeler,30 yrs 3 mo,100%,$221837,10,YES - Tennessee,Free & clear - absentee 30 years
+3,7609 Gleason Rd Houston TX 77016,Earl & Barbara Wheatfall,29 yrs 2 mo,100%,$142637,10,YES - Wisconsin,Confirmed across multiple files
+4,975 Dolly Wright St Houston TX 77088,Jules Arceneau,28 yrs,100%,$89000,10,YES - California,Free & clear - no mortgage
+5,6107 Elkwood Forest Dr Houston TX 77088,Deborah Lewis,27 yrs 3 mo,100%,$222097,10,YES - Louisiana,Highest equity $ in out-of-state group
+6,7227 Lockwood Dr Houston TX 77016,Earnest & Catherine Green,26 yrs 3 mo,100%,$88709,10,YES - California,Confirmed across multiple files
+7,7866 Green Lawn Dr Houston TX 77088,Anthony Andrews,26 yrs,100%,$195768,10,YES - Colorado,Same owner as #1 - two-property deal
+8,7326 Yoe St Houston TX 77016,Chimira Keener,32 yrs 5 mo,100%,$158882,9,NO - Texas,Longest hold in entire list - 32+ years
+9,6815 Hopper Rd Houston TX 77016,James & Patsy Laymond,32 yrs 4 mo,100%,$97412,9,NO - Texas,Owns 2 properties - portfolio deal candidate
+10,10229 Royal Oaks Dr Houston TX 77016,Dorothy Jones,32 yrs 3 mo,100%,$160000,9,NO - Texas,Free & clear - 32 years ownership
+11,9417 Camay Dr Houston TX 77016,Jose Bravo,32 yrs 1 mo,100%,$119347,9,NO - Texas,Free & clear - no mortgage
+12,10342 Castleton St Houston TX 77016,Darryl Sloan,31 yrs 10 mo,100%,$166457,9,NO - Texas,Owns 2 properties (also 6519 Cobalt St)
+13,6603 Cobalt St Houston TX 77016,James & Patsy Laymond,31 yrs 9 mo,100%,$134383,9,NO - Texas,Owns 2 properties - same family as #9
+14,7226 Haverton Dr Houston TX 77016,Douglas & Marie George,26 yrs 7 mo,103%,$227364,9,NO - Texas,Over 100% equity - highest dollar value Texas owner
+15,5318 Pate Rd Houston TX 77016,Alberto Rico,25 yrs 11 mo,111%,$254207,9,NO - Texas,Highest equity $ in entire list - 111%
+
+BONUS LEADS FROM 6TH FILE (Score 9)
+16,11516 Suburban Rd Houston TX 77016,Pablo & Maria Gonzalez,28 yrs 1 mo,100%,$384581,9,NO - Texas,Highest equity $ across all files - $384K
+17,10120 Homestead Rd Houston TX 77016,Angela Aguirre,25 yrs 7 mo,100%,$359001,9,NO - Texas,Second highest equity $ - $359K
+18,5833 Hartwick Rd Houston TX 77016,Roman Almanza,25 yrs 1 mo,100%,$347642,9,NO - Texas,Third highest equity $ - $347K
+19,11401 Sheridan Rd Houston TX 77016,Jorge Garza,29 yrs 7 mo,100%,$255071,9,NO - Texas,Strong equity - 29+ year hold
+20,9318 Allwood St Houston TX 77016,Thelma Phillips,27 yrs 1 mo,100%,$179036,9,NO - Texas,Nearly 30 year hold - free & clear
