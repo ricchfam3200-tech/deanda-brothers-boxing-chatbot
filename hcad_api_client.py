@@ -63,23 +63,24 @@ ARCGIS_ENDPOINT = (
     "https://www.gis.hctx.net/arcgis/rest/services/HCAD/Parcels/MapServer/0/query"
 )
 
-# All fields published by the HCAD Parcels layer that we care about
+# Confirmed field names from live HCAD ArcGIS layer metadata
 OUT_FIELDS = ",".join([
     "HCAD_NUM",
     "acct_num",
-    "owner_name_1",
-    "site_str_num",
-    "site_str_name",
-    "site_str_sfx",     # street suffix (ST, AVE, BLVD …)
-    "site_zip",
+    "owner_nam_1",       # confirmed: nam not name
+    "SiteAddress",       # confirmed: single full address string
+    "StateClass",        # property type code
     "mail_addr_1",
+    "mail_addr_2",
     "mail_city",
     "mail_state",
     "mail_zip",
     "total_appraised_val",
     "land_value",
-    "bld_value",
+    "impr_value",        # confirmed: improvement value (not bld_value)
+    "total_market_val",
     "new_owner_date",
+    "land_sqft",
 ])
 
 MAX_RESULTS  = 1000  # ArcGIS default page limit
@@ -197,23 +198,22 @@ class HarrisCountyGISClient:
         clauses: List[str] = []
 
         if account_num:
-            acct = account_num.strip().lstrip("0")   # normalise leading zeros
-            # Match against both column names in the layer
             clauses.append(
                 f"(acct_num = '{account_num.strip()}' OR HCAD_NUM = '{account_num.strip()}')"
             )
 
         if street_name:
             name = street_name.strip().upper()
-            # Use LIKE so partial names ("KOWIS") still match
-            clauses.append(f"site_str_name LIKE '%{name}%'")
+            # SiteAddress holds the full address as one string e.g. "5930 KOWIS ST"
+            clauses.append(f"SiteAddress LIKE '%{name}%'")
 
         if street_num:
             num = street_num.strip()
-            clauses.append(f"site_str_num = '{num}'")
+            clauses.append(f"SiteAddress LIKE '{num}%'")
 
         if site_zip:
-            clauses.append(f"site_zip = '{site_zip.strip()}'")
+            # Zip is embedded in SiteAddress string
+            clauses.append(f"SiteAddress LIKE '%{site_zip.strip()}%'")
 
         if not clauses:
             raise ValueError(
@@ -317,19 +317,13 @@ class HarrisCountyGISClient:
             except (ValueError, TypeError):
                 return None
 
-        # ── Property address ─────────────────────────────────────────────────
-        street_parts = filter(None, [
-            safe_str(attrs.get("site_str_num")),
-            safe_str(attrs.get("site_str_name")),
-            safe_str(attrs.get("site_str_sfx")),
-        ])
-        property_address = " ".join(street_parts).strip()
-        if property_address:
-            property_address += f", Houston, TX {safe_str(attrs.get('site_zip'))}".rstrip(", TX ")
+        # ── Property address (single string in live layer) ───────────────────
+        property_address = safe_str(attrs.get("SiteAddress"))
 
         # ── Mailing address ──────────────────────────────────────────────────
         mailing_parts = filter(None, [
             safe_str(attrs.get("mail_addr_1")),
+            safe_str(attrs.get("mail_addr_2")),
             safe_str(attrs.get("mail_city")),
             safe_str(attrs.get("mail_state")),
             safe_str(attrs.get("mail_zip")),
@@ -339,13 +333,15 @@ class HarrisCountyGISClient:
         return {
             "hcad_num":         safe_str(attrs.get("HCAD_NUM")),
             "acct_num":         safe_str(attrs.get("acct_num")),
-            "owner_name":       safe_str(attrs.get("owner_name_1")),
+            "owner_name":       safe_str(attrs.get("owner_nam_1")),   # nam not name
             "mailing_address":  mailing_address,
             "property_address": property_address,
-            "site_zip":         safe_str(attrs.get("site_zip")),
+            "property_type":    safe_str(attrs.get("StateClass")),
             "appraised_value":  safe_money(attrs.get("total_appraised_val")),
+            "market_value":     safe_money(attrs.get("total_market_val")),
             "land_value":       safe_money(attrs.get("land_value")),
-            "building_value":   safe_money(attrs.get("bld_value")),
+            "building_value":   safe_money(attrs.get("impr_value")),  # impr not bld
+            "land_sqft":        safe_money(attrs.get("land_sqft")),
             "transfer_date":    safe_str(attrs.get("new_owner_date")),
         }
 
@@ -369,10 +365,12 @@ class HarrisCountyGISClient:
             ("Owner Name",       record.get("owner_name")       or "N/A"),
             ("Owner Mailing",    record.get("mailing_address")  or "N/A"),
             ("Property Address", record.get("property_address") or "N/A"),
-            ("Site Zip",         record.get("site_zip")         or "N/A"),
+            ("Property Type",    record.get("property_type")    or "N/A"),
             ("Appraised Value",  fmt_money(record.get("appraised_value"))),
+            ("Market Value",     fmt_money(record.get("market_value"))),
             ("  Land Value",     fmt_money(record.get("land_value"))),
             ("  Building Value", fmt_money(record.get("building_value"))),
+            ("Land SqFt",        fmt_money(record.get("land_sqft"))),
             ("Transfer Date",    record.get("transfer_date")    or "N/A"),
         ]
 
@@ -393,8 +391,8 @@ if __name__ == "__main__":
 
     client = HarrisCountyGISClient()
 
-    # Query by street name + zip — matches all parcels on Kowis St in 77028
-    records = client.query_property(street_name="KOWIS", site_zip="77028")
+    # Query by street name — SiteAddress field contains full address string
+    records = client.query_property(street_name="KOWIS")
 
     if not records:
         print(
