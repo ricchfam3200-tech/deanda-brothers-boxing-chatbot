@@ -72,18 +72,26 @@ MAX_RETRIES   = 4
 
 # ── North Houston Target Zones ─────────────────────────────────────────────────
 #
-# Zone                Zip Codes
-# -----------------   ----------------------------------------
-# Studewood           77008, 77018  (Northside Village / Heights corridor)
-# 5th Ward            77020, 77026
-# Northline           77022, 77093
-# Aldine              77032, 77037, 77038, 77039, 77060, 77073
+# Zone                      Zip Codes
+# ----------------------    --------------------------------------------------
+# Studewood                 77008, 77018  (Northside Village / Heights corridor)
+# 5th Ward                  77020, 77026
+# Northline                 77022, 77093
+# Aldine                    77032, 77037, 77038, 77039, 77060, 77073
+# Greenspoint               77067, 77090  (I-45 N / Beltway 8 corridor)
+# Spring / FM 1960          77373, 77388, 77389
+# Humble / Atascocita       77338, 77339, 77346
+# Near Northside            77009, 77091, 77092  (Independence Heights, Inwood)
 #
 NORTH_HOUSTON_ZONES: Dict[str, List[str]] = {
-    "Studewood":  ["77008", "77018"],
-    "5th Ward":   ["77020", "77026"],
-    "Northline":  ["77022", "77093"],
-    "Aldine":     ["77032", "77037", "77038", "77039", "77060", "77073"],
+    "Studewood":          ["77008", "77018"],
+    "5th Ward":           ["77020", "77026"],
+    "Northline":          ["77022", "77093"],
+    "Aldine":             ["77032", "77037", "77038", "77039", "77060", "77073"],
+    "Greenspoint":        ["77067", "77090"],
+    "Spring / FM 1960":   ["77373", "77388", "77389"],
+    "Humble":             ["77338", "77339", "77346"],
+    "Near Northside":     ["77009", "77091", "77092"],
 }
 
 ALL_TARGET_ZIPS: List[str] = [
@@ -634,7 +642,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--zone", choices=list(NORTH_HOUSTON_ZONES.keys()), action="append", dest="zones",
         metavar="ZONE",
-        help="Limit to specific zone(s): Studewood, '5th Ward', Northline, Aldine. "
+        help="Limit to specific zone(s): Studewood, '5th Ward', Northline, Aldine, "
+             "Greenspoint, 'Spring / FM 1960', Humble, 'Near Northside'. "
              "Repeat for multiple (default: all zones).",
     )
 

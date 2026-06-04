@@ -79,6 +79,10 @@ python houston_leads.py --streets sample_input.csv --lgbs-file lgbs_harris.xlsx
 | 5th Ward | 77020, 77026 |
 | Northline | 77022, 77093 |
 | Aldine | 77032, 77037, 77038, 77039, 77060, 77073 |
+| Greenspoint | 77067, 77090 |
+| Spring / FM 1960 | 77373, 77388, 77389 |
+| Humble | 77338, 77339, 77346 |
+| Near Northside | 77009, 77091, 77092 |
 
 ### Setup Your Credentials
 
@@ -106,6 +110,10 @@ python propstream_search.py --setup 3   # Pre-Foreclosure / Liens
 # Specific zone only:
 python propstream_search.py --zone Aldine
 python propstream_search.py --zone "5th Ward"
+python propstream_search.py --zone Greenspoint
+python propstream_search.py --zone "Spring / FM 1960"
+python propstream_search.py --zone Humble
+python propstream_search.py --zone "Near Northside"
 
 # More results per zone (default: 50):
 python propstream_search.py --limit 100
